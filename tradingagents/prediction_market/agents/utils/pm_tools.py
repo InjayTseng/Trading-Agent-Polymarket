@@ -14,15 +14,18 @@ from tradingagents.prediction_market.dataflows.polymarket import (
     get_polymarket_related_markets,
     get_polymarket_search,
 )
+from tradingagents.prediction_market.dataflows.news import (
+    get_pm_news,
+    get_pm_global_news,
+)
 
 
 @tool
-def get_market_info(market_id: str, curr_date: str) -> str:
+def get_market_info(market_id: str) -> str:
     """Get prediction market info including question, current prices, volume, liquidity, and resolution criteria.
 
     Args:
         market_id: The Polymarket market/condition ID
-        curr_date: Current date for reference (YYYY-MM-DD)
     """
     return get_polymarket_market_info(market_id)
 
@@ -60,22 +63,21 @@ def get_resolution_criteria(market_id: str) -> str:
 
 
 @tool
-def get_event_context(event_id: str, curr_date: str) -> str:
+def get_event_context(event_id: str) -> str:
     """Get all markets grouped under a prediction market event.
 
     Args:
         event_id: The Polymarket event ID
-        curr_date: Current date for reference (YYYY-MM-DD)
     """
     return get_polymarket_event_context(event_id)
 
 
 @tool
 def get_related_markets(query: str, limit: int = 5) -> str:
-    """Search for active prediction market events sorted by volume.
+    """Search for active prediction market events by topic tag, sorted by volume.
 
     Args:
-        query: Search topic (unused for now, returns top by volume)
+        query: Topic tag to filter events (e.g. 'Politics', 'Crypto', 'Sports')
         limit: Maximum number of results (default 5)
     """
     return get_polymarket_related_markets(query, limit)
@@ -90,3 +92,26 @@ def search_markets(query: str, limit: int = 10) -> str:
         limit: Maximum number of results (default 10)
     """
     return get_polymarket_search(query, limit)
+
+
+@tool
+def get_news(query: str) -> str:
+    """Search for news articles relevant to a prediction market question.
+
+    Uses NewsAPI if NEWSAPI_KEY is set, falls back to Yahoo Finance.
+    Best for political, sports, crypto, and general event markets.
+
+    Args:
+        query: Search query — use the market question or key terms from it
+    """
+    return get_pm_news(query)
+
+
+@tool
+def get_global_news() -> str:
+    """Get top global news headlines relevant to prediction markets.
+
+    Returns the latest headlines that may affect open prediction markets.
+    Uses NewsAPI if NEWSAPI_KEY is set, falls back to Yahoo Finance.
+    """
+    return get_pm_global_news()

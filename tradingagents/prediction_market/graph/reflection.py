@@ -1,13 +1,13 @@
 # TradingAgents/prediction_market/graph/reflection.py
 
 from typing import Dict, Any
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 
 
 class PMReflector:
     """Handles reflection on prediction market decisions and updating memory."""
 
-    def __init__(self, quick_thinking_llm: ChatOpenAI):
+    def __init__(self, quick_thinking_llm: BaseChatModel):
         """Initialize the reflector with an LLM."""
         self.quick_thinking_llm = quick_thinking_llm
         self.reflection_system_prompt = self._get_reflection_prompt()
@@ -48,10 +48,10 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
 
     def _extract_current_situation(self, current_state: Dict[str, Any]) -> str:
         """Extract the current market situation from the state."""
-        curr_event_report = current_state["event_report"]
-        curr_odds_report = current_state["odds_report"]
-        curr_information_report = current_state["information_report"]
-        curr_sentiment_report = current_state["sentiment_report"]
+        curr_event_report = current_state.get("event_report", "")
+        curr_odds_report = current_state.get("odds_report", "")
+        curr_information_report = current_state.get("information_report", "")
+        curr_sentiment_report = current_state.get("sentiment_report", "")
 
         return f"{curr_event_report}\n\n{curr_odds_report}\n\n{curr_information_report}\n\n{curr_sentiment_report}"
 

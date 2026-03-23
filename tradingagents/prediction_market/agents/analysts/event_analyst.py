@@ -29,6 +29,8 @@ def create_event_analyst(llm):
             "3. Key dates and triggers that could cause resolution\n"
             "4. Resolution ambiguity assessment (clear/moderate/ambiguous)\n"
             "5. Related markets within the same event if applicable\n"
+            "6. Market structure type - is this a standard binary market or a negRisk (multi-outcome cluster)? "
+            "If negRisk=True, all outcomes in the event are mutually exclusive and probabilities sum to 1.\n"
             "Do not simply state that the situation is unclear, provide detailed and finegrained analysis "
             "and insights that may help traders make decisions."
             """ Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."""
@@ -38,13 +40,10 @@ def create_event_analyst(llm):
             [
                 (
                     "system",
-                    "You are a helpful AI assistant, collaborating with other assistants."
-                    " Use the provided tools to progress towards answering the question."
-                    " If you are unable to fully answer, that's OK; another assistant with different tools"
-                    " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL PREDICTION: **YES/NO** or deliverable,"
-                    " prefix your response with FINAL PREDICTION: **YES/NO** so the team knows to stop."
-                    " You have access to the following tools: {tool_names}.\n{system_message}"
+                    "{system_message}\n"
+                    "You have access to the following tools: {tool_names}.\n"
+                    "Use the provided tools to gather data before writing your report. "
+                    "You MUST call all available tools before writing your final report.\n"
                     "For your reference, the current date is {current_date}. Market ID: {market_id}. Question: {market_question}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
@@ -60,14 +59,9 @@ def create_event_analyst(llm):
         chain = prompt | llm.bind_tools(tools)
         result = chain.invoke(state["messages"])
 
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
-
-        return {
-            "messages": [result],
-            "event_report": report,
-        }
+        update = {"messages": [result]}
+        if not result.tool_calls:
+            update["event_report"] = result.content
+        return update
 
     return event_analyst_node

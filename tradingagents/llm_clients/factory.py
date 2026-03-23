@@ -1,3 +1,4 @@
+import warnings
 from typing import Optional
 
 from .base_client import BaseLLMClient
@@ -35,15 +36,33 @@ def create_llm_client(
     provider_lower = provider.lower()
 
     if provider_lower in ("openai", "ollama", "openrouter"):
-        return OpenAIClient(model, base_url, provider=provider_lower, **kwargs)
+        client = OpenAIClient(model, base_url, provider=provider_lower, **kwargs)
+        _validate_client(client, provider, model)
+        return client
 
     if provider_lower == "xai":
-        return OpenAIClient(model, base_url, provider="xai", **kwargs)
+        client = OpenAIClient(model, base_url, provider="xai", **kwargs)
+        _validate_client(client, provider, model)
+        return client
 
     if provider_lower == "anthropic":
-        return AnthropicClient(model, base_url, **kwargs)
+        client = AnthropicClient(model, base_url, **kwargs)
+        _validate_client(client, provider, model)
+        return client
 
     if provider_lower == "google":
-        return GoogleClient(model, base_url, **kwargs)
+        client = GoogleClient(model, base_url, **kwargs)
+        _validate_client(client, provider, model)
+        return client
 
     raise ValueError(f"Unsupported LLM provider: {provider}")
+
+
+def _validate_client(client: BaseLLMClient, provider: str, model: str):
+    """Validate the model after client creation."""
+    if not client.validate_model():
+        warnings.warn(
+            f"Model '{model}' may not be valid for provider '{provider}'. "
+            f"Proceeding anyway — the API will reject it if invalid.",
+            stacklevel=3,
+        )

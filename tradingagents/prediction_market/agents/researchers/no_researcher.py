@@ -19,14 +19,24 @@ def create_no_researcher(llm, memory):
         past_memories = memory.get_memories(curr_situation, n_matches=2)
 
         past_memory_str = ""
-        for i, rec in enumerate(past_memories, 1):
-            past_memory_str += rec["recommendation"] + "\n\n"
+        if past_memories:
+            for i, rec in enumerate(past_memories, 1):
+                past_memory_str += rec["recommendation"] + "\n\n"
+        else:
+            past_memory_str = "No past memories found."
 
         prompt = f"""You are a NO Analyst making the case that the prediction market event will NOT occur. Your goal is to present a well-reasoned argument that the YES probability should be lower than the current market price. Leverage the provided research and data to highlight potential obstacles and counter YES arguments effectively.
 
+CRITICAL: Begin by stating the historical base rate for this class of event (from the information report) and your starting probability estimate. Then for EACH piece of evidence, explicitly state how it updates your probability and by how much. Show your reasoning as a Bayesian update chain:
+- Base rate: X% (source)
+- Evidence A → update to Y% (because...)
+- Evidence B → update to Z% (because...)
+- Final estimated probability: W%
+
 Key points to focus on:
 
-- Risks and Obstacles: Highlight factors like structural barriers, historical base rates, opposing forces, or conditions that make the event unlikely to occur.
+- Base Rate Anchor: Start from the historical base rate and argue why this specific case should be below it.
+- Risks and Obstacles: Highlight factors like structural barriers, historical precedent, opposing forces, or conditions that make the event unlikely to occur.
 - Market Overpricing: Argue why the current market odds overvalue the YES outcome, identifying where optimism bias or herding behavior may be inflating the price.
 - Negative Indicators: Use evidence from event analysis, historical precedent, expert opinions, or recent adverse developments to support your position.
 - YES Counterpoints: Critically analyze the YES argument with specific data and sound reasoning, exposing weaknesses or over-optimistic assumptions.

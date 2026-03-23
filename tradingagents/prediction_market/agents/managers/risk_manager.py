@@ -24,7 +24,11 @@ def create_pm_risk_manager(llm, memory):
 
 MARKET QUESTION: {market_question}
 
-Your decision must result in a clear recommendation: APPROVE the trade as proposed, MODIFY the trade with specific adjustments, or REJECT the trade entirely. Choose PASS only if strongly justified by specific risk arguments, not as a fallback when all sides seem valid. Strive for clarity and decisiveness.
+Your decision must result in one of three outcomes:
+- APPROVE: Proceed with the trade as proposed. State the final position as BUY_YES or BUY_NO.
+- MODIFY: Proceed with adjusted parameters (e.g., reduced size). State the final position as BUY_YES or BUY_NO with adjusted sizing.
+- PASS: Do not trade. Only choose PASS if strongly justified by specific risk arguments, not as a fallback.
+Strive for clarity and decisiveness.
 
 MANDATORY RISK ASSESSMENTS -- You must explicitly address each of the following:
 
@@ -42,9 +46,9 @@ Guidelines for Decision-Making:
 
 Deliverables:
 - Explicit assessment of resolution risk, liquidity risk, and correlation risk.
-- A clear and actionable recommendation: APPROVE (with the proposed sizing), MODIFY (with specific adjustments to size, direction, or conditions), or REJECT (with reasoning).
+- A clear and actionable recommendation: APPROVE, MODIFY, or PASS.
 - If APPROVE or MODIFY, state the final position: BUY_YES or BUY_NO with sizing guidance.
-- If REJECT, the final position is PASS.
+- If PASS, clearly explain which specific risks justify not trading.
 - Detailed reasoning anchored in the debate and past reflections.
 
 ---

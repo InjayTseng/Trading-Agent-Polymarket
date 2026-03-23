@@ -19,12 +19,22 @@ def create_yes_researcher(llm, memory):
         past_memories = memory.get_memories(curr_situation, n_matches=2)
 
         past_memory_str = ""
-        for i, rec in enumerate(past_memories, 1):
-            past_memory_str += rec["recommendation"] + "\n\n"
+        if past_memories:
+            for i, rec in enumerate(past_memories, 1):
+                past_memory_str += rec["recommendation"] + "\n\n"
+        else:
+            past_memory_str = "No past memories found."
 
         prompt = f"""You are a YES Analyst advocating that the prediction market event WILL occur. Your task is to build a strong, evidence-based case that the YES probability should be higher than the current market price. Leverage the provided research and data to address concerns and counter NO arguments effectively.
 
+CRITICAL: Begin by stating the historical base rate for this class of event (from the information report) and your starting probability estimate. Then for EACH piece of evidence, explicitly state how it updates your probability and by how much. Show your reasoning as a Bayesian update chain:
+- Base rate: X% (source)
+- Evidence A → update to Y% (because...)
+- Evidence B → update to Z% (because...)
+- Final estimated probability: W%
+
 Key points to focus on:
+- Base Rate Anchor: Start from the historical base rate and argue why this specific case should be above it.
 - Supporting Evidence: Highlight concrete indicators, trends, and data points that suggest the event is likely to occur.
 - Probability Assessment: Argue why the current market odds undervalue the YES outcome, identifying where the market may be mispricing risk.
 - Positive Catalysts: Emphasize upcoming events, momentum shifts, or developments that increase the likelihood of the event occurring.

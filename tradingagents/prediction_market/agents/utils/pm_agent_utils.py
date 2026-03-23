@@ -8,10 +8,9 @@ from tradingagents.prediction_market.agents.utils.pm_tools import (
     get_event_context,
     get_related_markets,
     search_markets,
+    get_news,
+    get_global_news,
 )
-
-# Re-export news tools from the existing stock module (news is useful for PM too)
-from tradingagents.agents.utils.agent_utils import get_news, get_global_news
 
 
 def create_msg_delete():

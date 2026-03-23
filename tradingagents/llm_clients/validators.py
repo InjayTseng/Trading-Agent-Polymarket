@@ -4,6 +4,8 @@ Only validates model names - does NOT enforce limits.
 Let LLM providers use their own defaults for unspecified params.
 """
 
+import warnings
+
 VALID_MODELS = {
     "openai": [
         # GPT-5 series
@@ -62,6 +64,7 @@ def validate_model(provider: str, model: str) -> bool:
         return True
 
     if provider_lower not in VALID_MODELS:
+        warnings.warn(f"Unknown provider '{provider}' — skipping model validation.")
         return True
 
     return model in VALID_MODELS[provider_lower]

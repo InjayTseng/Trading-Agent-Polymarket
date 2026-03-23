@@ -38,13 +38,15 @@ def create_odds_analyst(llm):
             [
                 (
                     "system",
-                    "You are a helpful AI assistant, collaborating with other assistants."
-                    " Use the provided tools to progress towards answering the question."
-                    " If you are unable to fully answer, that's OK; another assistant with different tools"
-                    " will help where you left off. Execute what you can to make progress."
-                    " If you or any other assistant has the FINAL PREDICTION: **YES/NO** or deliverable,"
-                    " prefix your response with FINAL PREDICTION: **YES/NO** so the team knows to stop."
-                    " You have access to the following tools: {tool_names}.\n{system_message}"
+                    "{system_message}\n"
+                    "You have access to the following tools: {tool_names}.\n"
+                    "Use the provided tools to gather data before writing your report. "
+                    "You MUST call all available tools before writing your final report.\n"
+                    "When fetching price history, use a lookback window appropriate to the market's remaining life:\n"
+                    "  - Markets expiring in < 7 days: last 30 days\n"
+                    "  - Markets expiring in 7-30 days: last 90 days\n"
+                    "  - Markets expiring in > 30 days: last 180 days\n"
+                    "Call get_market_info first to determine the end date before requesting price history.\n"
                     "For your reference, the current date is {current_date}. Market ID: {market_id}. Question: {market_question}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
@@ -60,14 +62,9 @@ def create_odds_analyst(llm):
         chain = prompt | llm.bind_tools(tools)
         result = chain.invoke(state["messages"])
 
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
-
-        return {
-            "messages": [result],
-            "odds_report": report,
-        }
+        update = {"messages": [result]}
+        if not result.tool_calls:
+            update["odds_report"] = result.content
+        return update
 
     return odds_analyst_node

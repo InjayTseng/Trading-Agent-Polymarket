@@ -1,71 +1,141 @@
 # TradingAgents/prediction_market/graph/signal_processing.py
 
 import json
-from langchain_openai import ChatOpenAI
+import re
+import logging
+
+logger = logging.getLogger(__name__)
+
+PASS_SIGNAL = json.dumps({
+    "signal": "PASS",
+    "estimated_probability": None,
+    "market_price": None,
+    "edge": None,
+    "position_size": None,
+    "confidence": None,
+})
 
 
 class PMSignalProcessor:
-    """Processes prediction market trading signals to extract actionable decisions."""
+    """Processes prediction market trading signals using deterministic regex parsing.
 
-    def __init__(self, quick_thinking_llm: ChatOpenAI):
-        """Initialize with an LLM for processing."""
-        self.quick_thinking_llm = quick_thinking_llm
+    No LLM call required — extracts structured data directly from the Risk Judge
+    or Trader's natural language output using pattern matching.
+    """
+
+    def __init__(self, quick_thinking_llm=None):
+        """Initialize. LLM param kept for backward compatibility but is not used."""
+        pass
 
     def process_signal(self, full_signal: str) -> str:
         """
         Process a full prediction market trading signal to extract the core decision
-        and structured data.
+        and structured data using regex parsing.
 
         Args:
-            full_signal: Complete trading signal text from the risk manager
+            full_signal: Complete trading signal text from the risk manager or trader
 
         Returns:
             JSON string with signal, estimated_probability, market_price, edge,
             position_size, and confidence
         """
-        messages = [
-            (
-                "system",
-                """You are an efficient assistant designed to analyze paragraphs or financial reports provided by a group of prediction market analysts. Your task is to extract the investment decision and key metrics.
+        if not full_signal:
+            logger.warning("Empty signal received, defaulting to PASS")
+            return PASS_SIGNAL
 
-Extract the following from the report:
-1. signal: The investment decision - must be exactly one of: BUY_YES, BUY_NO, or PASS
-2. estimated_probability: The estimated true probability (0.0 to 1.0), or null if not stated
-3. market_price: The current market price/probability (0.0 to 1.0), or null if not stated
-4. edge: The perceived edge (estimated_probability - market_price for YES, or market_price - estimated_probability for NO), or null if not stated
-5. position_size: The recommended position size as a fraction (0.0 to 1.0), or null if not stated
-6. confidence: The confidence level (low, medium, high), or null if not stated
+        upper_signal = full_signal.upper()
 
-Respond with ONLY valid JSON, no other text. Example:
-{"signal": "BUY_YES", "estimated_probability": 0.65, "market_price": 0.50, "edge": 0.15, "position_size": 0.03, "confidence": "medium"}""",
-            ),
-            ("human", full_signal),
+        # Extract signal (BUY_YES, BUY_NO, or PASS)
+        signal = "PASS"
+        # Check for explicit final decision markers first
+        final_patterns = [
+            r"FINAL\s+TRADE\s+DECISION\s*:\s*\*?\*?\s*(BUY_YES|BUY_NO|PASS)\s*\*?\*?",
+            r"FINAL\s+TRADE\s+PROPOSAL\s*:\s*\*?\*?\s*(BUY_YES|BUY_NO|PASS)\s*\*?\*?",
+            r"RECOMMENDATION\s*:\s*\*?\*?\s*(BUY_YES|BUY_NO|PASS)\s*\*?\*?",
         ]
-
-        result = self.quick_thinking_llm.invoke(messages).content
-
-        # Try to parse as JSON; if it fails, wrap the raw signal
-        try:
-            parsed = json.loads(result)
-            # Ensure signal field is valid
-            if parsed.get("signal") not in ("BUY_YES", "BUY_NO", "PASS"):
-                parsed["signal"] = "PASS"
-            return json.dumps(parsed)
-        except (json.JSONDecodeError, TypeError):
-            # Fallback: extract just the signal keyword
-            upper_result = result.upper()
-            if "BUY_YES" in upper_result:
+        for pattern in final_patterns:
+            match = re.search(pattern, upper_signal)
+            if match:
+                signal = match.group(1)
+                break
+        else:
+            # Fallback: scan for keywords
+            if "BUY_YES" in upper_signal:
                 signal = "BUY_YES"
-            elif "BUY_NO" in upper_result:
+            elif "BUY_NO" in upper_signal:
                 signal = "BUY_NO"
-            else:
-                signal = "PASS"
 
-            return json.dumps({
-                "signal": signal,
-                "estimated_probability": None,
-                "market_price": None,
-                "edge": None,
-                "position_size": None,
-                "confidence": None,
-            })
+        # Extract estimated probability (look for patterns like "65%", "0.65", "estimated probability")
+        estimated_probability = None
+        prob_patterns = [
+            r"(?:estimated?\s+(?:true\s+)?probability|true\s+probability|my\s+estimate)\s*(?:is|:)\s*(?:approximately?\s+)?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(?:estimated?\s+(?:true\s+)?probability|true\s+probability)\s*(?:is|:)\s*(?:approximately?\s+)?(0\.\d+)",
+        ]
+        for pattern in prob_patterns:
+            match = re.search(pattern, full_signal, re.IGNORECASE)
+            if match:
+                val = float(match.group(1))
+                estimated_probability = val / 100 if val > 1 else val
+                break
+
+        # Extract market price
+        market_price = None
+        price_patterns = [
+            r"(?:market\s+price|current\s+(?:market\s+)?price|market\s+(?:is\s+)?(?:priced?\s+)?(?:at)?)\s*(?:is|:)?\s*(?:approximately?\s+)?(?:\$)?(0\.\d+)",
+            r"(?:market\s+price|current\s+price)\s*(?:is|:)?\s*(?:approximately?\s+)?(\d{1,3}(?:\.\d+)?)\s*%",
+        ]
+        for pattern in price_patterns:
+            match = re.search(pattern, full_signal, re.IGNORECASE)
+            if match:
+                val = float(match.group(1))
+                market_price = val / 100 if val > 1 else val
+                break
+
+        # Extract edge
+        edge = None
+        edge_patterns = [
+            r"(?:edge|perceived\s+edge)\s*(?:is|:|\=)\s*(?:approximately?\s+)?(\d{1,3}(?:\.\d+)?)\s*%",
+            r"(?:edge|perceived\s+edge)\s*(?:is|:|\=)\s*(?:approximately?\s+)?(0\.\d+)",
+        ]
+        for pattern in edge_patterns:
+            match = re.search(pattern, full_signal, re.IGNORECASE)
+            if match:
+                val = float(match.group(1))
+                edge = val / 100 if val > 1 else val
+                break
+        # Compute edge from probability and price if not found directly
+        if edge is None and estimated_probability is not None and market_price is not None:
+            edge = round(abs(estimated_probability - market_price), 4)
+
+        # Extract position size
+        position_size = None
+        size_patterns = [
+            r"(?:position\s+size|sizing)\s*(?:is|:|\=)\s*(?:approximately?\s+)?(0\.\d+)",
+            r"(?:position\s+size|sizing)\s*(?:is|:|\=)\s*(?:approximately?\s+)?(\d{1,2}(?:\.\d+)?)\s*%",
+        ]
+        for pattern in size_patterns:
+            match = re.search(pattern, full_signal, re.IGNORECASE)
+            if match:
+                val = float(match.group(1))
+                position_size = val / 100 if val > 1 else val
+                break
+        # Cap position size
+        if position_size is not None:
+            position_size = min(position_size, 0.10)
+
+        # Extract confidence
+        confidence = None
+        conf_match = re.search(r"(?:confidence)\s*(?:level|:|\s+is)\s*(?::?\s*)?(low|medium|high)", full_signal, re.IGNORECASE)
+        if conf_match:
+            confidence = conf_match.group(1).lower()
+
+        result = {
+            "signal": signal,
+            "estimated_probability": estimated_probability,
+            "market_price": market_price,
+            "edge": edge,
+            "position_size": position_size,
+            "confidence": confidence,
+        }
+
+        return json.dumps(result)

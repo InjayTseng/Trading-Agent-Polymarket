@@ -42,9 +42,11 @@ from .signal_processing import PMSignalProcessor
 class PMTradingAgentsGraph:
     """Main class that orchestrates the prediction market trading agents framework."""
 
+    VALID_ANALYSTS = {"event", "odds", "information", "sentiment"}
+
     def __init__(
         self,
-        selected_analysts=["event", "odds", "information", "sentiment"],
+        selected_analysts=None,
         debug=False,
         config: Dict[str, Any] = None,
         callbacks: Optional[List] = None,
@@ -57,9 +59,24 @@ class PMTradingAgentsGraph:
             config: Configuration dictionary. If None, uses PM default config
             callbacks: Optional list of callback handlers (e.g., for tracking LLM/tool stats)
         """
+        if selected_analysts is None:
+            selected_analysts = ["event", "odds", "information", "sentiment"]
+        invalid = set(selected_analysts) - self.VALID_ANALYSTS
+        if invalid:
+            raise ValueError(f"Unknown analyst types: {invalid}. Valid: {self.VALID_ANALYSTS}")
+        if not selected_analysts:
+            raise ValueError("At least one analyst must be selected.")
+
         self.debug = debug
         self.config = config or PM_DEFAULT_CONFIG
         self.callbacks = callbacks or []
+
+        # Validate required config keys
+        required_keys = {"llm_provider", "deep_think_llm", "quick_think_llm",
+                         "max_debate_rounds", "max_risk_discuss_rounds", "project_dir"}
+        missing = required_keys - self.config.keys()
+        if missing:
+            raise ValueError(f"Config is missing required keys: {missing}")
 
         # Create necessary directories
         os.makedirs(
@@ -115,9 +132,10 @@ class PMTradingAgentsGraph:
             self.invest_judge_memory,
             self.risk_manager_memory,
             self.conditional_logic,
+            config=self.config,
         )
 
-        self.propagator = PMPropagator()
+        self.propagator = PMPropagator(max_recur_limit=self.config.get("max_recur_limit", 100))
         self.reflector = PMReflector(self.quick_thinking_llm)
         self.signal_processor = PMSignalProcessor(self.quick_thinking_llm)
 
@@ -176,9 +194,10 @@ class PMTradingAgentsGraph:
             ),
             "sentiment": ToolNode(
                 [
-                    # News for sentiment analysis
+                    # News and market search for sentiment analysis
                     get_news,
                     get_global_news,
+                    search_markets,
                 ]
             ),
         }
@@ -198,21 +217,22 @@ class PMTradingAgentsGraph:
         init_agent_state = self.propagator.create_initial_state(
             market_id, trade_date, market_question
         )
-        args = self.propagator.get_graph_args()
 
         if self.debug:
             # Debug mode with tracing
-            trace = []
+            args = self.propagator.get_graph_args(stream=True)
+            final_state = None
             for chunk in self.graph.stream(init_agent_state, **args):
-                if len(chunk["messages"]) == 0:
-                    pass
-                else:
-                    chunk["messages"][-1].pretty_print()
-                    trace.append(chunk)
+                messages = chunk.get("messages", [])
+                if messages:
+                    messages[-1].pretty_print()
+                final_state = chunk
 
-            final_state = trace[-1]
+            if final_state is None:
+                raise RuntimeError("Graph produced no output chunks.")
         else:
             # Standard mode without tracing
+            args = self.propagator.get_graph_args(stream=False)
             final_state = self.graph.invoke(init_agent_state, **args)
 
         # Store current state for reflection
@@ -222,54 +242,62 @@ class PMTradingAgentsGraph:
         self._log_state(trade_date, final_state)
 
         # Return decision and processed signal
-        return final_state, self.process_signal(final_state["final_trade_decision"])
+        # If risk debate was skipped (PASS fast-path), use trader plan as decision
+        raw_decision = final_state.get("final_trade_decision", "")
+        if not raw_decision:
+            trader_plan = final_state.get("trader_investment_plan", "")
+            if trader_plan:
+                raw_decision = trader_plan
+            else:
+                import warnings
+                warnings.warn(f"Graph did not produce a final_trade_decision for market {self.market_id}")
+        return final_state, self.process_signal(raw_decision or "")
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
+        invest_debate = final_state.get("investment_debate_state", {})
+        risk_debate = final_state.get("risk_debate_state", {})
+
         self.log_states_dict[str(trade_date)] = {
-            "market_id": final_state["market_id"],
-            "market_question": final_state["market_question"],
-            "trade_date": final_state["trade_date"],
-            "event_report": final_state["event_report"],
-            "odds_report": final_state["odds_report"],
-            "information_report": final_state["information_report"],
-            "sentiment_report": final_state["sentiment_report"],
+            "market_id": final_state.get("market_id", ""),
+            "market_question": final_state.get("market_question", ""),
+            "trade_date": final_state.get("trade_date", ""),
+            "event_report": final_state.get("event_report", ""),
+            "odds_report": final_state.get("odds_report", ""),
+            "information_report": final_state.get("information_report", ""),
+            "sentiment_report": final_state.get("sentiment_report", ""),
             "investment_debate_state": {
-                "yes_history": final_state["investment_debate_state"]["yes_history"],
-                "no_history": final_state["investment_debate_state"]["no_history"],
-                "history": final_state["investment_debate_state"]["history"],
-                "current_response": final_state["investment_debate_state"][
-                    "current_response"
-                ],
-                "judge_decision": final_state["investment_debate_state"][
-                    "judge_decision"
-                ],
+                "yes_history": invest_debate.get("yes_history", ""),
+                "no_history": invest_debate.get("no_history", ""),
+                "history": invest_debate.get("history", ""),
+                "current_response": invest_debate.get("current_response", ""),
+                "judge_decision": invest_debate.get("judge_decision", ""),
             },
-            "trader_investment_decision": final_state["trader_investment_plan"],
+            "trader_investment_plan": final_state.get("trader_investment_plan", ""),
             "risk_debate_state": {
-                "aggressive_history": final_state["risk_debate_state"]["aggressive_history"],
-                "conservative_history": final_state["risk_debate_state"]["conservative_history"],
-                "neutral_history": final_state["risk_debate_state"]["neutral_history"],
-                "history": final_state["risk_debate_state"]["history"],
-                "judge_decision": final_state["risk_debate_state"]["judge_decision"],
+                "aggressive_history": risk_debate.get("aggressive_history", ""),
+                "conservative_history": risk_debate.get("conservative_history", ""),
+                "neutral_history": risk_debate.get("neutral_history", ""),
+                "history": risk_debate.get("history", ""),
+                "judge_decision": risk_debate.get("judge_decision", ""),
             },
-            "investment_plan": final_state["investment_plan"],
-            "final_trade_decision": final_state["final_trade_decision"],
+            "investment_plan": final_state.get("investment_plan", ""),
+            "final_trade_decision": final_state.get("final_trade_decision", ""),
         }
 
-        # Save to file
-        directory = Path(f"eval_results/{self.market_id}/PMTradingAgentsStrategy_logs/")
-        directory.mkdir(parents=True, exist_ok=True)
+        # Save to file using config results_dir
+        results_dir = Path(os.path.abspath(self.config.get("results_dir", "./results")))
+        log_dir = results_dir / str(self.market_id) / "PMTradingAgentsStrategy_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"full_states_log_{trade_date}.json"
 
-        with open(
-            f"eval_results/{self.market_id}/PMTradingAgentsStrategy_logs/full_states_log_{trade_date}.json",
-            "w",
-            encoding="utf-8",
-        ) as f:
+        with open(log_path, "w", encoding="utf-8") as f:
             json.dump(self.log_states_dict, f, indent=4)
 
     def reflect_and_remember(self, returns_losses):
         """Reflect on decisions and update memory based on returns."""
+        if self.curr_state is None:
+            raise RuntimeError("reflect_and_remember() called before a successful propagate() run.")
         self.reflector.reflect_yes_researcher(
             self.curr_state, returns_losses, self.yes_memory
         )

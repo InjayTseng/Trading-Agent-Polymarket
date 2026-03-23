@@ -23,18 +23,20 @@ def create_pm_research_manager(llm, memory):
 
 Synthesize the key arguments from both the YES and NO analysts, focusing on the most compelling evidence. Your output must include:
 
-1. Estimated True Probability: Your best estimate of the actual probability the event occurs, expressed as a percentage.
-2. Market Price Comparison: How your estimated probability compares to the current market-implied odds.
-3. Edge Calculation: The difference between your estimated probability and the market price. Positive edge means YES is underpriced; negative edge means YES is overpriced.
-4. Confidence Level: How confident you are in your probability estimate (low, medium, or high), with justification.
-5. Recommendation: A decisive stance — BUY YES, BUY NO, or HOLD — supported by the strongest arguments from the debate.
-6. Rationale: An explanation of why these arguments lead to your conclusion.
-7. Strategic Actions: Concrete steps for implementing the recommendation, including position sizing guidance based on edge size and confidence.
+1. Historical Base Rate: State the base rate for this class of event cited in the debate. This is your probabilistic anchor.
+2. Estimated True Probability: Starting from the base rate, apply Bayesian updates based on the evidence presented by both sides. Show your update chain explicitly.
+3. Market Price Comparison: How your estimated probability compares to the current market-implied odds.
+4. Edge Calculation: The difference between your estimated probability and the market price. Positive edge means YES is underpriced; negative edge means YES is overpriced.
+5. Confidence Level: How confident you are in your probability estimate (low, medium, or high), with justification.
+6. Recommendation: A decisive stance — BUY_YES, BUY_NO, or PASS — supported by the strongest arguments from the debate.
+   - If your estimated edge (|estimated_probability - market_price|) is below 5%, your recommendation MUST be PASS, regardless of directional conviction.
+7. Rationale: An explanation of why these arguments lead to your conclusion.
+8. Strategic Actions: Concrete steps for implementing the recommendation, including position sizing guidance based on edge size and confidence.
 
 Take into account your past mistakes on similar situations. Use these insights to refine your decision-making and ensure you are learning and improving. Present your analysis conversationally, as if speaking naturally, without special formatting.
 
 Here are your past reflections on mistakes:
-\"{past_memory_str}\"
+{past_memory_str if past_memory_str else "No past memories found."}
 
 Here is the debate:
 Debate History:

@@ -56,7 +56,8 @@ class GoogleClient(BaseLLMClient):
                 llm_kwargs["thinking_level"] = thinking_level
             else:
                 # Gemini 2.5: map to thinking_budget
-                llm_kwargs["thinking_budget"] = -1 if thinking_level == "high" else 0
+                level_map = {"minimal": 1024, "low": 4096, "medium": 8192, "high": -1}
+                llm_kwargs["thinking_budget"] = level_map.get(thinking_level, 0)
 
         return NormalizedChatGoogleGenerativeAI(**llm_kwargs)
 

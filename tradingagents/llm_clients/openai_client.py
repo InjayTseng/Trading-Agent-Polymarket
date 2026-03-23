@@ -1,4 +1,5 @@
 import os
+import warnings
 from typing import Any, Optional
 
 from langchain_openai import ChatOpenAI
@@ -20,7 +21,9 @@ class UnifiedChatOpenAI(ChatOpenAI):
     """
 
     def __init__(self, **kwargs):
-        if "gpt-5" in kwargs.get("model", "").lower():
+        # Only strip temperature for native OpenAI GPT-5 models, not proxied ones
+        provider = kwargs.pop("_provider", "openai")
+        if provider == "openai" and "gpt-5" in kwargs.get("model", "").lower():
             kwargs.pop("temperature", None)
             kwargs.pop("top_p", None)
         super().__init__(**kwargs)
@@ -46,15 +49,19 @@ class OpenAIClient(BaseLLMClient):
         if self.provider == "xai":
             llm_kwargs["base_url"] = "https://api.x.ai/v1"
             api_key = os.environ.get("XAI_API_KEY")
-            if api_key:
+            if not api_key:
+                warnings.warn("XAI_API_KEY environment variable is not set.")
+            else:
                 llm_kwargs["api_key"] = api_key
         elif self.provider == "openrouter":
             llm_kwargs["base_url"] = "https://openrouter.ai/api/v1"
             api_key = os.environ.get("OPENROUTER_API_KEY")
-            if api_key:
+            if not api_key:
+                warnings.warn("OPENROUTER_API_KEY environment variable is not set.")
+            else:
                 llm_kwargs["api_key"] = api_key
         elif self.provider == "ollama":
-            llm_kwargs["base_url"] = "http://localhost:11434/v1"
+            llm_kwargs["base_url"] = self.base_url or "http://localhost:11434/v1"
             llm_kwargs["api_key"] = "ollama"  # Ollama doesn't require auth
         elif self.base_url:
             llm_kwargs["base_url"] = self.base_url
@@ -63,6 +70,7 @@ class OpenAIClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
+        llm_kwargs["_provider"] = self.provider
         return UnifiedChatOpenAI(**llm_kwargs)
 
     def validate_model(self) -> bool:

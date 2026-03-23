@@ -54,17 +54,18 @@ class PMPropagator:
             "sentiment_report": "",
         }
 
-    def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:
+    def get_graph_args(self, callbacks: Optional[List] = None, stream: bool = False) -> Dict[str, Any]:
         """Get arguments for the graph invocation.
 
         Args:
             callbacks: Optional list of callback handlers for tool execution tracking.
                        Note: LLM callbacks are handled separately via LLM constructor.
+            stream: If True, include stream_mode for graph.stream() calls.
         """
         config = {"recursion_limit": self.max_recur_limit}
         if callbacks:
             config["callbacks"] = callbacks
-        return {
-            "stream_mode": "values",
-            "config": config,
-        }
+        args = {"config": config}
+        if stream:
+            args["stream_mode"] = "values"
+        return args

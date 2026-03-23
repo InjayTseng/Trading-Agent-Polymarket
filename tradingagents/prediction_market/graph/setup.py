@@ -1,7 +1,7 @@
 # TradingAgents/prediction_market/graph/setup.py
 
 from typing import Dict, Any
-from langchain_openai import ChatOpenAI
+from langchain_core.language_models import BaseChatModel
 from langgraph.graph import END, StateGraph, START
 from langgraph.prebuilt import ToolNode
 
@@ -16,8 +16,8 @@ class PMGraphSetup:
 
     def __init__(
         self,
-        quick_thinking_llm: ChatOpenAI,
-        deep_thinking_llm: ChatOpenAI,
+        quick_thinking_llm: BaseChatModel,
+        deep_thinking_llm: BaseChatModel,
         tool_nodes: Dict[str, ToolNode],
         yes_memory,
         no_memory,
@@ -25,6 +25,7 @@ class PMGraphSetup:
         invest_judge_memory,
         risk_manager_memory,
         conditional_logic: PMConditionalLogic,
+        config: Dict[str, Any] = None,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
@@ -36,9 +37,10 @@ class PMGraphSetup:
         self.invest_judge_memory = invest_judge_memory
         self.risk_manager_memory = risk_manager_memory
         self.conditional_logic = conditional_logic
+        self.config = config or {}
 
     def setup_graph(
-        self, selected_analysts=["event", "odds", "information", "sentiment"]
+        self, selected_analysts=None,
     ):
         """Set up and compile the prediction market agent workflow graph.
 
@@ -49,6 +51,8 @@ class PMGraphSetup:
                 - "information": Information analyst
                 - "sentiment": Sentiment analyst
         """
+        if selected_analysts is None:
+            selected_analysts = ["event", "odds", "information", "sentiment"]
         if len(selected_analysts) == 0:
             raise ValueError("PM Graph Setup Error: no analysts selected!")
 
@@ -95,7 +99,7 @@ class PMGraphSetup:
         research_manager_node = create_pm_research_manager(
             self.deep_thinking_llm, self.invest_judge_memory
         )
-        trader_node = create_pm_trader(self.quick_thinking_llm, self.trader_memory)
+        trader_node = create_pm_trader(self.quick_thinking_llm, self.trader_memory, config=self.config)
 
         # Create risk analysis nodes
         aggressive_analyst = create_pm_aggressive_debator(self.quick_thinking_llm)
@@ -126,18 +130,17 @@ class PMGraphSetup:
         workflow.add_node("Conservative Analyst", conservative_analyst)
         workflow.add_node("Risk Judge", risk_manager_node)
 
-        # Define edges
-        # Start with the first analyst
-        first_analyst = selected_analysts[0]
-        workflow.add_edge(START, f"{first_analyst.capitalize()} Analyst")
-
-        # Connect analysts in sequence
-        for i, analyst_type in enumerate(selected_analysts):
+        # Define edges — analysts run in PARALLEL from START
+        # Each analyst has its own tool loop, and all converge at YES Researcher
+        for analyst_type in selected_analysts:
             current_analyst = f"{analyst_type.capitalize()} Analyst"
             current_tools = f"tools_{analyst_type}"
             current_clear = f"Msg Clear {analyst_type.capitalize()}"
 
-            # Add conditional edges for current analyst
+            # All analysts start in parallel from START
+            workflow.add_edge(START, current_analyst)
+
+            # Add conditional edges for tool loop
             workflow.add_conditional_edges(
                 current_analyst,
                 getattr(self.conditional_logic, f"should_continue_{analyst_type}"),
@@ -145,12 +148,8 @@ class PMGraphSetup:
             )
             workflow.add_edge(current_tools, current_analyst)
 
-            # Connect to next analyst or to YES Researcher if this is the last analyst
-            if i < len(selected_analysts) - 1:
-                next_analyst = f"{selected_analysts[i+1].capitalize()} Analyst"
-                workflow.add_edge(current_clear, next_analyst)
-            else:
-                workflow.add_edge(current_clear, "YES Researcher")
+            # All analysts converge at YES Researcher
+            workflow.add_edge(current_clear, "YES Researcher")
 
         # Add remaining edges
         workflow.add_conditional_edges(
@@ -170,30 +169,35 @@ class PMGraphSetup:
             },
         )
         workflow.add_edge("Research Manager", "Trader")
-        workflow.add_edge("Trader", "Aggressive Analyst")
+        # Skip risk debate when Trader recommends PASS (saves 4-5 LLM calls)
+        workflow.add_conditional_edges(
+            "Trader",
+            self.conditional_logic.should_skip_risk_debate,
+            {
+                "Aggressive Analyst": "Aggressive Analyst",
+                "END": END,
+            },
+        )
+        risk_routing = {
+            "Aggressive Analyst": "Aggressive Analyst",
+            "Conservative Analyst": "Conservative Analyst",
+            "Neutral Analyst": "Neutral Analyst",
+            "Risk Judge": "Risk Judge",
+        }
         workflow.add_conditional_edges(
             "Aggressive Analyst",
             self.conditional_logic.should_continue_risk_analysis,
-            {
-                "Conservative Analyst": "Conservative Analyst",
-                "Risk Judge": "Risk Judge",
-            },
+            risk_routing,
         )
         workflow.add_conditional_edges(
             "Conservative Analyst",
             self.conditional_logic.should_continue_risk_analysis,
-            {
-                "Neutral Analyst": "Neutral Analyst",
-                "Risk Judge": "Risk Judge",
-            },
+            risk_routing,
         )
         workflow.add_conditional_edges(
             "Neutral Analyst",
             self.conditional_logic.should_continue_risk_analysis,
-            {
-                "Aggressive Analyst": "Aggressive Analyst",
-                "Risk Judge": "Risk Judge",
-            },
+            risk_routing,
         )
 
         workflow.add_edge("Risk Judge", END)

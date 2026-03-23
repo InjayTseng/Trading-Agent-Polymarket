@@ -1,14 +1,20 @@
 import functools
 
 
-def create_pm_trader(llm, memory):
+def create_pm_trader(llm, memory, config=None):
+    trading_config = config or {}
+    kelly_fraction = trading_config.get("kelly_fraction", 0.25)
+    min_edge_threshold = trading_config.get("min_edge_threshold", 0.05)
+    max_position_pct = trading_config.get("max_position_pct", 0.05)
+    bankroll = trading_config.get("bankroll", 10000)
+
     def trader_node(state, name):
         market_question = state["market_question"]
         investment_plan = state["investment_plan"]
-        event_report = state["event_report"]
-        odds_report = state["odds_report"]
-        information_report = state["information_report"]
-        sentiment_report = state["sentiment_report"]
+        event_report = state.get("event_report", "")
+        odds_report = state.get("odds_report", "")
+        information_report = state.get("information_report", "")
+        sentiment_report = state.get("sentiment_report", "")
 
         curr_situation = f"{event_report}\n\n{odds_report}\n\n{information_report}\n\n{sentiment_report}"
         past_memories = memory.get_memories(curr_situation, n_matches=2)
@@ -46,24 +52,26 @@ DECISION FRAMEWORK:
 1. Estimate the TRUE PROBABILITY of the event occurring based on all available analysis.
 2. Compare your estimated probability against the current market price (from the odds report).
 3. Calculate your EDGE: Edge = |Estimated Probability - Market Price|
-4. Apply a MINIMUM EDGE THRESHOLD of 5%. If your edge is below 5%, you MUST recommend PASS regardless of direction.
-5. For position sizing, use 0.25x FRACTIONAL KELLY CRITERION:
-   - Kelly fraction = edge / odds_against
-   - Position size = 0.25 * Kelly fraction * bankroll
+4. Apply a MINIMUM EDGE THRESHOLD of {min_edge_threshold*100:.0f}%. If your edge is below {min_edge_threshold*100:.0f}%, you MUST recommend PASS regardless of direction.
+5. For position sizing, use {kelly_fraction}x FRACTIONAL KELLY CRITERION:
+   - For BUY_YES: Kelly fraction = (estimated_probability - market_price) / (1 - market_price)
+   - For BUY_NO: Kelly fraction = (market_price - estimated_probability) / market_price
+   - Position size = {kelly_fraction} * Kelly_fraction * bankroll (${bankroll:,.0f})
+   - HARD CAP: Position size must NEVER exceed {max_position_pct*100:.0f}% of bankroll (${bankroll * max_position_pct:,.0f}) regardless of Kelly output.
    - This conservative sizing protects against estimation errors.
 
 YOUR ANALYSIS MUST INCLUDE:
 - Your estimated true probability (with reasoning)
 - The current market price
 - Your calculated edge (estimated probability minus market price)
-- Whether the edge exceeds the 5% minimum threshold
-- Position sizing reasoning using fractional Kelly
+- Whether the edge exceeds the {min_edge_threshold*100:.0f}% minimum threshold
+- Position sizing reasoning using fractional Kelly (show the formula with numbers)
 - Key risks that could invalidate your probability estimate
 
 DECISION OPTIONS:
-- BUY_YES: You believe the event is MORE likely than the market implies (your probability > market price + 5%)
-- BUY_NO: You believe the event is LESS likely than the market implies (your probability < market price - 5%)
-- PASS: Your edge is below 5%, or uncertainty is too high to have conviction
+- BUY_YES: You believe the event is MORE likely than the market implies (your probability > market price + {min_edge_threshold*100:.0f}%)
+- BUY_NO: You believe the event is LESS likely than the market implies (your probability < market price - {min_edge_threshold*100:.0f}%)
+- PASS: Your edge is below {min_edge_threshold*100:.0f}%, or uncertainty is too high to have conviction
 
 Do not forget to utilize lessons from past decisions to learn from your mistakes. Here are reflections from similar situations you traded in and the lessons learned:
 {past_memory_str}

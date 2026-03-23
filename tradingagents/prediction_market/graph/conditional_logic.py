@@ -54,6 +54,18 @@ class PMConditionalLogic:
             return "NO Researcher"
         return "YES Researcher"
 
+    def should_skip_risk_debate(self, state: PMAgentState) -> str:
+        """Skip the risk debate entirely if the Trader recommends PASS."""
+        trader_plan = state.get("trader_investment_plan", "")
+        if trader_plan:
+            upper_plan = trader_plan.upper()
+            # Check if the trader's final recommendation is PASS
+            if "FINAL TRADE PROPOSAL: **PASS**" in upper_plan or (
+                "PASS" in upper_plan and "BUY_YES" not in upper_plan and "BUY_NO" not in upper_plan
+            ):
+                return "END"
+        return "Aggressive Analyst"
+
     def should_continue_risk_analysis(self, state: PMAgentState) -> str:
         """Determine if risk analysis should continue."""
         if (

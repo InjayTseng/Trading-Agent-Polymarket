@@ -7,14 +7,18 @@ import os
 import json
 import hashlib
 import time
+import logging
+import tempfile
 from datetime import datetime, timedelta
 from typing import Optional
 
 import requests
+from requests.exceptions import ConnectionError, Timeout, HTTPError
 
+logger = logging.getLogger(__name__)
 
-GAMMA_BASE = "https://gamma-api.polymarket.com"
-CLOB_BASE = "https://clob.polymarket.com"
+GAMMA_BASE = os.getenv("POLYMARKET_GAMMA_URL", "https://gamma-api.polymarket.com")
+CLOB_BASE = os.getenv("POLYMARKET_CLOB_URL", "https://clob.polymarket.com")
 
 # Simple file-based cache
 _CACHE_DIR = None
@@ -40,44 +44,88 @@ def _get_cached(key: str, max_age_seconds: int = 300):
     if os.path.exists(path):
         mtime = os.path.getmtime(path)
         if time.time() - mtime < max_age_seconds:
-            with open(path, "r") as f:
-                return json.load(f)
+            try:
+                with open(path, "r") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                # Corrupt cache entry — evict it
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
     return None
 
 
 def _set_cached(key: str, data):
     path = os.path.join(_get_cache_dir(), f"{key}.json")
-    with open(path, "w") as f:
-        json.dump(data, f)
+    cache_dir = os.path.dirname(path)
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=cache_dir, delete=False, suffix=".tmp") as f:
+            json.dump(data, f)
+            tmp_path = f.name
+        os.replace(tmp_path, path)  # atomic on POSIX
+    except OSError as e:
+        logger.warning("Failed to write cache for key %s: %s", key, e)
+
+
+def _safe_float(value, default=0.0):
+    """Safely convert a value to float, returning default on failure."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _http_get_with_retry(url, params=None, timeout=30, retries=3, backoff_base=1.5):
+    """HTTP GET with exponential backoff retry."""
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, params=params, timeout=timeout)
+            if resp.status_code == 429:
+                retry_after = int(resp.headers.get("Retry-After", backoff_base ** attempt))
+                logger.warning("Rate limited by %s, retrying in %ds", url, retry_after)
+                time.sleep(retry_after)
+                continue
+            resp.raise_for_status()
+            return resp.json()
+        except (ConnectionError, Timeout) as e:
+            if attempt == retries - 1:
+                raise
+            wait = backoff_base ** attempt
+            logger.warning("Request to %s failed (attempt %d/%d): %s. Retrying in %.1fs", url, attempt + 1, retries, e, wait)
+            time.sleep(wait)
+    raise RuntimeError(f"Failed after {retries} retries: {url}")
 
 
 def _gamma_get(endpoint: str, params: Optional[dict] = None, cache_seconds: int = 300):
-    """Make a GET request to the Gamma API with caching."""
+    """Make a GET request to the Gamma API with caching and retry."""
     key = _cache_key("gamma", endpoint=endpoint, params=params)
     cached = _get_cached(key, cache_seconds)
     if cached is not None:
         return cached
 
-    url = f"{GAMMA_BASE}{endpoint}"
-    resp = requests.get(url, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = _http_get_with_retry(f"{GAMMA_BASE}{endpoint}", params)
+    except Exception as e:
+        logger.error("Gamma API request failed for %s: %s", endpoint, e)
+        return None
 
     _set_cached(key, data)
     return data
 
 
 def _clob_get(endpoint: str, params: Optional[dict] = None, cache_seconds: int = 60):
-    """Make a GET request to the CLOB API with caching."""
+    """Make a GET request to the CLOB API with caching and retry."""
     key = _cache_key("clob", endpoint=endpoint, params=params)
     cached = _get_cached(key, cache_seconds)
     if cached is not None:
         return cached
 
-    url = f"{CLOB_BASE}{endpoint}"
-    resp = requests.get(url, params=params, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = _http_get_with_retry(f"{CLOB_BASE}{endpoint}", params)
+    except Exception as e:
+        logger.error("CLOB API request failed for %s: %s", endpoint, e)
+        return None
 
     _set_cached(key, data)
     return data
@@ -106,8 +154,13 @@ def get_polymarket_market_info(market_id: str) -> str:
     ]
 
     for i, outcome in enumerate(outcomes):
-        price = prices[i] if i < len(prices) else "N/A"
-        lines.append(f"  {outcome}: ${price} ({float(price)*100:.1f}% implied probability)" if price != "N/A" else f"  {outcome}: N/A")
+        price = prices[i] if i < len(prices) else None
+        price_f = _safe_float(price, default=None)
+        if price_f is not None:
+            label = "implied probability" if len(outcomes) <= 2 else "share of pool"
+            lines.append(f"  {outcome}: ${price_f:.4f} ({price_f*100:.1f}% {label})")
+        else:
+            lines.append(f"  {outcome}: N/A")
 
     lines.extend([
         "",
@@ -159,16 +212,26 @@ def get_polymarket_price_history(
 
     # Convert dates to unix timestamps
     try:
-        start_ts = int(datetime.strptime(start_date, "%Y-%m-%d").timestamp())
-        end_ts = int(datetime.strptime(end_date, "%Y-%m-%d").timestamp())
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
         return "Invalid date format. Use YYYY-MM-DD."
+
+    if end_dt < start_dt:
+        return f"Invalid date range: end_date ({end_date}) is before start_date ({start_date})."
+
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
+
+    # Adapt resolution to range
+    delta_days = (end_dt - start_dt).days
+    interval = "1d" if delta_days <= 90 else "1w"
 
     params = {
         "market": token_id,
         "startTs": start_ts,
         "endTs": end_ts,
-        "interval": "1d",
+        "interval": interval,
     }
 
     try:
@@ -191,12 +254,12 @@ def get_polymarket_price_history(
 
     for point in history:
         ts = point.get("t", 0)
-        price = point.get("p", 0)
+        price = _safe_float(point.get("p", 0))
         dt = datetime.utcfromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
         lines.append(f"{dt} | ${price:.4f} | {price*100:.1f}%")
 
     # Summary stats
-    prices = [p.get("p", 0) for p in history]
+    prices = [_safe_float(p.get("p", 0)) for p in history]
     if prices:
         lines.extend([
             "",
@@ -257,8 +320,8 @@ def get_polymarket_order_book(market_id: str) -> str:
 
     # Spread analysis
     if bids and asks:
-        best_bid = float(bids[0].get("price", 0))
-        best_ask = float(asks[0].get("price", 0))
+        best_bid = _safe_float(bids[0].get("price", 0))
+        best_ask = _safe_float(asks[0].get("price", 0))
         spread = best_ask - best_bid
         mid = (best_ask + best_bid) / 2
         lines.extend([
@@ -331,7 +394,7 @@ def get_polymarket_event_context(event_id: str) -> str:
 
 
 def get_polymarket_related_markets(query: str, limit: int = 5) -> str:
-    """Search for related prediction market events."""
+    """Search for related prediction market events by topic or tag."""
     params = {
         "active": "true",
         "closed": "false",
@@ -339,6 +402,8 @@ def get_polymarket_related_markets(query: str, limit: int = 5) -> str:
         "ascending": "false",
         "limit": limit,
     }
+    if query:
+        params["tag"] = query
 
     data = _gamma_get("/events", params=params, cache_seconds=600)
 
@@ -366,7 +431,7 @@ def get_polymarket_related_markets(query: str, limit: int = 5) -> str:
 
 
 def get_polymarket_search(query: str, limit: int = 10) -> str:
-    """Search Polymarket for markets matching a query."""
+    """Search Polymarket for markets matching a query by keyword or tag."""
     params = {
         "active": "true",
         "closed": "false",
@@ -375,7 +440,8 @@ def get_polymarket_search(query: str, limit: int = 10) -> str:
         "limit": limit,
     }
     if query:
-        params["tag"] = query
+        # Use text search on question field for keyword matching
+        params["question"] = query
     data = _gamma_get("/markets", params=params, cache_seconds=300)
 
     if not data:
