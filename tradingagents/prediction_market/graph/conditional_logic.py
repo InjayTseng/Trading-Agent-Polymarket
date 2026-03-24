@@ -1,47 +1,54 @@
 # TradingAgents/prediction_market/graph/conditional_logic.py
 
+import logging
 from tradingagents.prediction_market.agents.utils.pm_agent_states import PMAgentState
+
+logger = logging.getLogger(__name__)
 
 
 class PMConditionalLogic:
     """Handles conditional logic for determining prediction market graph flow."""
 
-    def __init__(self, max_debate_rounds=1, max_risk_discuss_rounds=1):
+    def __init__(self, max_debate_rounds=1, max_risk_discuss_rounds=1, max_tool_calls=10):
         """Initialize with configuration parameters."""
         self.max_debate_rounds = max_debate_rounds
         self.max_risk_discuss_rounds = max_risk_discuss_rounds
+        self.max_tool_calls = max_tool_calls
+
+    def _count_tool_calls(self, state: PMAgentState) -> int:
+        """Count total tool call messages in the current conversation."""
+        return sum(1 for m in state["messages"] if getattr(m, "tool_calls", None))
+
+    def _should_continue_tool_loop(self, state: PMAgentState, tool_node: str, done_node: str) -> str:
+        """Generic tool loop continuation with safety limit."""
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            tool_call_count = self._count_tool_calls(state)
+            if tool_call_count >= self.max_tool_calls:
+                logger.warning(
+                    "Tool call limit (%d) reached for analyst, forcing completion",
+                    self.max_tool_calls,
+                )
+                return done_node
+            return tool_node
+        return done_node
 
     def should_continue_event(self, state: PMAgentState):
         """Determine if event analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_event"
-        return "Msg Clear Event"
+        return self._should_continue_tool_loop(state, "tools_event", "Msg Clear Event")
 
     def should_continue_odds(self, state: PMAgentState):
         """Determine if odds analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_odds"
-        return "Msg Clear Odds"
+        return self._should_continue_tool_loop(state, "tools_odds", "Msg Clear Odds")
 
     def should_continue_information(self, state: PMAgentState):
         """Determine if information analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_information"
-        return "Msg Clear Information"
+        return self._should_continue_tool_loop(state, "tools_information", "Msg Clear Information")
 
     def should_continue_sentiment(self, state: PMAgentState):
         """Determine if sentiment analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_sentiment"
-        return "Msg Clear Sentiment"
+        return self._should_continue_tool_loop(state, "tools_sentiment", "Msg Clear Sentiment")
 
     def should_continue_debate(self, state: PMAgentState) -> str:
         """Determine if YES/NO debate should continue."""

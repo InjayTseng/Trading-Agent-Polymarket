@@ -22,15 +22,19 @@ class FinancialSituationMemory:
     Supports persistent storage — call save() to persist to disk and load() to restore.
     """
 
+    DEFAULT_MAX_SIZE = 500
+
     def __init__(self, name: str, config: dict = None):
         """Initialize the memory system.
 
         Args:
             name: Name identifier for this memory instance
             config: Configuration dict. If it contains 'memory_dir', auto-loads from disk.
+                    Optional 'max_memory_size' (int) caps stored entries (oldest evicted first).
         """
         self.name = name
         self.config = config or {}
+        self.max_size: int = self.config.get("max_memory_size", self.DEFAULT_MAX_SIZE)
         self.documents: List[str] = []
         self.recommendations: List[str] = []
         self.bm25 = None
@@ -61,15 +65,44 @@ class FinancialSituationMemory:
         else:
             self.bm25 = None
 
+    def _is_duplicate(self, situation: str, recommendation: str) -> bool:
+        """Check if an exact situation+recommendation pair already exists."""
+        for doc, rec in zip(self.documents, self.recommendations):
+            if doc == situation and rec == recommendation:
+                return True
+        return False
+
+    def _evict_oldest(self, count: int = 1):
+        """Evict the oldest entries to stay within max_size."""
+        if count > 0:
+            self.documents = self.documents[count:]
+            self.recommendations = self.recommendations[count:]
+
     def add_situations(self, situations_and_advice: List[Tuple[str, str]]):
         """Add financial situations and their corresponding advice.
+
+        Skips exact duplicates. Evicts oldest entries if max_size would be exceeded.
 
         Args:
             situations_and_advice: List of tuples (situation, recommendation)
         """
+        added = 0
         for situation, recommendation in situations_and_advice:
+            if self._is_duplicate(situation, recommendation):
+                logger.debug("Skipping duplicate memory entry: %s...", situation[:60])
+                continue
             self.documents.append(situation)
             self.recommendations.append(recommendation)
+            added += 1
+
+        # Evict oldest if over capacity
+        overflow = len(self.documents) - self.max_size
+        if overflow > 0:
+            logger.info("Memory '%s' exceeded max_size (%d), evicting %d oldest entries", self.name, self.max_size, overflow)
+            self._evict_oldest(overflow)
+
+        if added == 0:
+            return
 
         # Rebuild BM25 index with new documents
         self._rebuild_index()

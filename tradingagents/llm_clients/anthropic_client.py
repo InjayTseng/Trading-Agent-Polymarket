@@ -20,6 +20,10 @@ class AnthropicClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
+        # Pass base_url as anthropic_api_url if provided (for custom endpoints / proxies)
+        if self.base_url:
+            llm_kwargs["anthropic_api_url"] = self.base_url
+
         return ChatAnthropic(**llm_kwargs)
 
     def validate_model(self) -> bool:

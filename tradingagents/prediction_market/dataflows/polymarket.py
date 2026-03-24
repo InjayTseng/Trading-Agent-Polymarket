@@ -17,6 +17,9 @@ from requests.exceptions import ConnectionError, Timeout, HTTPError
 
 logger = logging.getLogger(__name__)
 
+# Error prefix used in all tool return strings so LLM agents can detect failures
+_ERR = "[ERROR] "
+
 GAMMA_BASE = os.getenv("POLYMARKET_GAMMA_URL", "https://gamma-api.polymarket.com")
 CLOB_BASE = os.getenv("POLYMARKET_CLOB_URL", "https://clob.polymarket.com")
 
@@ -139,7 +142,7 @@ def get_polymarket_market_info(market_id: str) -> str:
     data = _gamma_get(f"/markets/{market_id}")
 
     if not data:
-        return f"No market found with ID: {market_id}"
+        return f"{_ERR}No market found with ID: {market_id}"
 
     outcomes = json.loads(data.get("outcomes", "[]")) if isinstance(data.get("outcomes"), str) else data.get("outcomes", [])
     prices = json.loads(data.get("outcomePrices", "[]")) if isinstance(data.get("outcomePrices"), str) else data.get("outcomePrices", [])
@@ -201,11 +204,11 @@ def get_polymarket_price_history(
     # First get market info to find the CLOB token ID
     market_data = _gamma_get(f"/markets/{market_id}")
     if not market_data:
-        return f"No market found with ID: {market_id}"
+        return f"{_ERR}No market found with ID: {market_id}"
 
     clob_ids = json.loads(market_data.get("clobTokenIds", "[]")) if isinstance(market_data.get("clobTokenIds"), str) else market_data.get("clobTokenIds", [])
     if not clob_ids:
-        return "No CLOB token IDs found for this market."
+        return f"{_ERR}No CLOB token IDs found for this market."
 
     # Use the first token ID (YES outcome)
     token_id = clob_ids[0]
@@ -215,10 +218,10 @@ def get_polymarket_price_history(
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     except ValueError:
-        return "Invalid date format. Use YYYY-MM-DD."
+        return f"{_ERR}Invalid date format. Use YYYY-MM-DD."
 
     if end_dt < start_dt:
-        return f"Invalid date range: end_date ({end_date}) is before start_date ({start_date})."
+        return f"{_ERR}Invalid date range: end_date ({end_date}) is before start_date ({start_date})."
 
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
@@ -237,11 +240,11 @@ def get_polymarket_price_history(
     try:
         data = _clob_get("/prices-history", params=params, cache_seconds=300)
     except Exception as e:
-        return f"Price history unavailable for this market (API error: {e}). The market may be too new or the date range too large."
+        return f"{_ERR}Price history unavailable for this market (API error: {e}). The market may be too new or the date range too large."
 
     history = data.get("history", [])
     if not history:
-        return "No price history available for the specified period."
+        return f"{_ERR}No price history available for the specified period."
 
     lines = [
         f"Price History for: {market_data.get('question', market_id)}",
@@ -277,18 +280,18 @@ def get_polymarket_order_book(market_id: str) -> str:
     """Get the current order book for a market."""
     market_data = _gamma_get(f"/markets/{market_id}")
     if not market_data:
-        return f"No market found with ID: {market_id}"
+        return f"{_ERR}No market found with ID: {market_id}"
 
     clob_ids = json.loads(market_data.get("clobTokenIds", "[]")) if isinstance(market_data.get("clobTokenIds"), str) else market_data.get("clobTokenIds", [])
     if not clob_ids:
-        return "No CLOB token IDs found for this market."
+        return f"{_ERR}No CLOB token IDs found for this market."
 
     token_id = clob_ids[0]
 
     try:
         data = _clob_get("/book", params={"token_id": token_id}, cache_seconds=30)
     except Exception as e:
-        return f"Order book unavailable for this market (API error: {e})."
+        return f"{_ERR}Order book unavailable for this market (API error: {e})."
 
     bids = data.get("bids", [])
     asks = data.get("asks", [])
@@ -340,7 +343,7 @@ def get_polymarket_resolution_criteria(market_id: str) -> str:
     """Get the resolution criteria for a market."""
     data = _gamma_get(f"/markets/{market_id}")
     if not data:
-        return f"No market found with ID: {market_id}"
+        return f"{_ERR}No market found with ID: {market_id}"
 
     lines = [
         f"Resolution Criteria for: {data.get('question', market_id)}",
@@ -361,9 +364,9 @@ def get_polymarket_event_context(event_id: str) -> str:
     try:
         data = _gamma_get(f"/events/{event_id}")
     except Exception:
-        return f"No event found with ID: {event_id}. Note: this may be a market ID, not an event ID. Use get_market_info with the market ID instead."
+        return f"{_ERR}No event found with ID: {event_id}. Note: this may be a market ID, not an event ID. Use get_market_info with the market ID instead."
     if not data:
-        return f"No event found with ID: {event_id}. Note: this may be a market ID, not an event ID. Use get_market_info with the market ID instead."
+        return f"{_ERR}No event found with ID: {event_id}. Note: this may be a market ID, not an event ID. Use get_market_info with the market ID instead."
 
     lines = [
         f"Event: {data.get('title', 'N/A')}",
@@ -408,7 +411,7 @@ def get_polymarket_related_markets(query: str, limit: int = 5) -> str:
     data = _gamma_get("/events", params=params, cache_seconds=600)
 
     if not data:
-        return "No events found."
+        return f"{_ERR}No events found."
 
     events = data if isinstance(data, list) else [data]
 
@@ -445,7 +448,7 @@ def get_polymarket_search(query: str, limit: int = 10) -> str:
     data = _gamma_get("/markets", params=params, cache_seconds=300)
 
     if not data:
-        return f"No results found for: {query}"
+        return f"{_ERR}No results found for: {query}"
 
     markets = data if isinstance(data, list) else data.get("markets", [])
 

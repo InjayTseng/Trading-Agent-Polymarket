@@ -121,6 +121,7 @@ class PMTradingAgentsGraph:
         self.conditional_logic = PMConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
             max_risk_discuss_rounds=self.config["max_risk_discuss_rounds"],
+            max_tool_calls=self.config.get("max_tool_calls", 10),
         )
         self.graph_setup = PMGraphSetup(
             self.quick_thinking_llm,

@@ -28,4 +28,6 @@ PM_DEFAULT_CONFIG = {
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
+    # Tool loop safety limit (per analyst)
+    "max_tool_calls": 10,
 }

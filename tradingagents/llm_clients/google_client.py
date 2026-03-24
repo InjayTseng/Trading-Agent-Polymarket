@@ -42,6 +42,10 @@ class GoogleClient(BaseLLMClient):
             if key in self.kwargs:
                 llm_kwargs[key] = self.kwargs[key]
 
+        # Map unified api_key → google_api_key so callers can use the same param name
+        if "google_api_key" not in llm_kwargs and "api_key" in self.kwargs:
+            llm_kwargs["google_api_key"] = self.kwargs["api_key"]
+
         # Map thinking_level to appropriate API param based on model
         # Gemini 3 Pro: low, high
         # Gemini 3 Flash: minimal, low, medium, high
