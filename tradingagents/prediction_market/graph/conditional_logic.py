@@ -16,8 +16,14 @@ class PMConditionalLogic:
         self.max_tool_calls = max_tool_calls
 
     def _count_tool_calls(self, state: PMAgentState) -> int:
-        """Count total tool call messages in the current conversation."""
-        return sum(1 for m in state["messages"] if getattr(m, "tool_calls", None))
+        """Count tool call messages in the current analyst loop (trailing sequence only)."""
+        count = 0
+        for m in reversed(state["messages"]):
+            if getattr(m, "tool_calls", None):
+                count += 1
+            elif count > 0:
+                break
+        return count
 
     def _should_continue_tool_loop(self, state: PMAgentState, tool_node: str, done_node: str) -> str:
         """Generic tool loop continuation with safety limit."""

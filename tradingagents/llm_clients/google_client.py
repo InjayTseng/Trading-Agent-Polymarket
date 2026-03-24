@@ -1,8 +1,11 @@
+import logging
 from typing import Any, Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from .base_client import BaseLLMClient
+
+logger = logging.getLogger(__name__)
 from .validators import validate_model
 
 
@@ -61,7 +64,11 @@ class GoogleClient(BaseLLMClient):
             else:
                 # Gemini 2.5: map to thinking_budget
                 level_map = {"minimal": 1024, "low": 4096, "medium": 8192, "high": -1}
-                llm_kwargs["thinking_budget"] = level_map.get(thinking_level, 0)
+                budget = level_map.get(thinking_level)
+                if budget is None:
+                    logger.warning("Unknown thinking_level '%s' for Gemini 2.5, thinking disabled", thinking_level)
+                    budget = 0
+                llm_kwargs["thinking_budget"] = budget
 
         return NormalizedChatGoogleGenerativeAI(**llm_kwargs)
 

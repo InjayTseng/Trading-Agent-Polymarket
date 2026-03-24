@@ -7,13 +7,14 @@ Supports persistent storage via save/load to JSON files.
 """
 
 import json
-import os
 import logging
+import os
+import re
+from typing import List, Optional, Set, Tuple
+
 from rank_bm25 import BM25Okapi
-from typing import List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
-import re
 
 
 class FinancialSituationMemory:
@@ -37,6 +38,7 @@ class FinancialSituationMemory:
         self.max_size: int = self.config.get("max_memory_size", self.DEFAULT_MAX_SIZE)
         self.documents: List[str] = []
         self.recommendations: List[str] = []
+        self._seen: Set[Tuple[str, str]] = set()
         self.bm25 = None
         self._memory_path: Optional[str] = None
 
@@ -66,15 +68,14 @@ class FinancialSituationMemory:
             self.bm25 = None
 
     def _is_duplicate(self, situation: str, recommendation: str) -> bool:
-        """Check if an exact situation+recommendation pair already exists."""
-        for doc, rec in zip(self.documents, self.recommendations):
-            if doc == situation and rec == recommendation:
-                return True
-        return False
+        """Check if an exact situation+recommendation pair already exists (O(1))."""
+        return (situation, recommendation) in self._seen
 
     def _evict_oldest(self, count: int = 1):
         """Evict the oldest entries to stay within max_size."""
         if count > 0:
+            for doc, rec in zip(self.documents[:count], self.recommendations[:count]):
+                self._seen.discard((doc, rec))
             self.documents = self.documents[count:]
             self.recommendations = self.recommendations[count:]
 
@@ -93,6 +94,7 @@ class FinancialSituationMemory:
                 continue
             self.documents.append(situation)
             self.recommendations.append(recommendation)
+            self._seen.add((situation, recommendation))
             added += 1
 
         # Evict oldest if over capacity
@@ -188,6 +190,7 @@ class FinancialSituationMemory:
                 data = json.load(f)
             self.documents = data.get("documents", [])
             self.recommendations = data.get("recommendations", [])
+            self._seen = set(zip(self.documents, self.recommendations))
             self._rebuild_index()
             logger.debug("Loaded %d memories from %s", len(self.documents), load_path)
         except (json.JSONDecodeError, OSError) as e:
@@ -197,6 +200,7 @@ class FinancialSituationMemory:
         """Clear all stored memories."""
         self.documents = []
         self.recommendations = []
+        self._seen = set()
         self.bm25 = None
 
 

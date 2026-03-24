@@ -22,11 +22,11 @@ def parse(processor, text: str) -> dict:
 
 class TestEmptyInput:
     def test_none_returns_pass(self, processor):
-        result = json.loads(processor.process_signal(None))
+        result = parse(processor, None)
         assert result["signal"] == "PASS"
 
     def test_empty_string_returns_pass(self, processor):
-        result = json.loads(processor.process_signal(""))
+        result = parse(processor, "")
         assert result["signal"] == "PASS"
 
     def test_pass_signal_constant_structure(self):
