@@ -124,12 +124,19 @@ class TestPersistence:
     def test_load_rebuilds_bm25_index(self, tmp_path):
         path = str(tmp_path / "mem.json")
         mem1 = FinancialSituationMemory("test")
-        mem1.add_situations([("inflation rates rising", "buy bonds")])
+        # BM25 needs multiple docs for meaningful IDF scores
+        mem1.add_situations([
+            ("High inflation rates rising with central bank tightening monetary policy", "buy bonds"),
+            ("Tech sector showing extreme volatility with selling pressure", "reduce growth exposure"),
+            ("Strong dollar hurting emerging market currencies", "hedge forex risk"),
+        ])
         mem1.save(path)
 
         mem2 = FinancialSituationMemory("test")
         mem2.load(path)
-        results = mem2.get_memories("inflation", n_matches=1)
+        assert mem2.bm25 is not None
+        assert len(mem2.documents) == 3
+        results = mem2.get_memories("inflation rates rising monetary policy tightening", n_matches=1)
         assert len(results) >= 1
 
     def test_auto_save_with_memory_dir(self, tmp_path):

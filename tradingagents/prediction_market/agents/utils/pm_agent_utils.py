@@ -10,6 +10,10 @@ from tradingagents.prediction_market.agents.utils.pm_tools import (
     search_markets,
     get_news,
     get_global_news,
+    get_crypto_data,
+    get_crypto_history,
+    get_defi_protocol_tvl,
+    get_top_defi,
 )
 
 

@@ -4,6 +4,10 @@ from tradingagents.prediction_market.agents.utils.pm_agent_utils import (
     get_news,
     get_global_news,
     get_related_markets,
+    get_crypto_data,
+    get_crypto_history,
+    get_defi_protocol_tvl,
+    get_top_defi,
 )
 
 
@@ -17,6 +21,10 @@ def create_information_analyst(llm):
             get_news,
             get_global_news,
             get_related_markets,
+            get_crypto_data,
+            get_crypto_history,
+            get_defi_protocol_tvl,
+            get_top_defi,
         ]
 
         system_message = (

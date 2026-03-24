@@ -18,6 +18,12 @@ from tradingagents.prediction_market.dataflows.news import (
     get_pm_news,
     get_pm_global_news,
 )
+from tradingagents.prediction_market.dataflows.onchain import (
+    get_crypto_price as _get_crypto_price,
+    get_crypto_price_history as _get_crypto_price_history,
+    get_defi_tvl as _get_defi_tvl,
+    get_top_defi_protocols as _get_top_defi_protocols,
+)
 
 
 @tool
@@ -115,3 +121,52 @@ def get_global_news() -> str:
     Uses NewsAPI if NEWSAPI_KEY is set, falls back to Yahoo Finance.
     """
     return get_pm_global_news()
+
+
+@tool
+def get_crypto_data(coin_id: str) -> str:
+    """Get current price, volume, market cap, and recent changes for a cryptocurrency.
+
+    Useful for crypto-related prediction markets. Uses CoinGecko (free, no API key).
+
+    Args:
+        coin_id: CoinGecko coin ID (e.g., 'bitcoin', 'ethereum', 'solana', 'cardano')
+    """
+    return _get_crypto_price(coin_id)
+
+
+@tool
+def get_crypto_history(coin_id: str, days: int = 30) -> str:
+    """Get historical price data for a cryptocurrency over a time period.
+
+    Useful for analyzing price trends relevant to crypto prediction markets.
+
+    Args:
+        coin_id: CoinGecko coin ID (e.g., 'bitcoin', 'ethereum')
+        days: Number of days of history (7, 30, 90, 365)
+    """
+    return _get_crypto_price_history(coin_id, days=days)
+
+
+@tool
+def get_defi_protocol_tvl(protocol: str) -> str:
+    """Get Total Value Locked (TVL) data for a DeFi protocol.
+
+    Useful for DeFi-related prediction markets. Uses DeFi Llama (free, no API key).
+
+    Args:
+        protocol: DeFi Llama protocol slug (e.g., 'aave', 'uniswap', 'lido', 'maker')
+    """
+    return _get_defi_tvl(protocol)
+
+
+@tool
+def get_top_defi(limit: int = 10) -> str:
+    """Get top DeFi protocols ranked by Total Value Locked.
+
+    Provides an overview of the DeFi landscape for crypto prediction markets.
+
+    Args:
+        limit: Number of protocols to return (default 10)
+    """
+    return _get_top_defi_protocols(limit=limit)

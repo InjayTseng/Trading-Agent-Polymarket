@@ -9,22 +9,16 @@ Set NEWSAPI_KEY in .env for the best experience.
 """
 
 import os
-import json
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
+from .http_utils import http_get_with_retry
+
 logger = logging.getLogger(__name__)
 
 # Try to import optional dependencies
-_HAS_NEWSAPI = False
 _HAS_YFINANCE = False
-
-try:
-    import requests as _requests
-    _HAS_NEWSAPI = True  # NewsAPI just needs requests
-except ImportError:
-    pass
 
 try:
     import yfinance as _yf
@@ -32,8 +26,15 @@ try:
 except ImportError:
     pass
 
+NEWSAPI_BASE = "https://newsapi.org/v2"
 
-def _newsapi_search(query: str, days_back: int = 7, limit: int = 10) -> Optional[str]:
+
+def _newsapi_search(
+    query: str,
+    days_back: int = 7,
+    limit: int = 10,
+    language: str = "en",
+) -> Optional[str]:
     """Search for news articles using NewsAPI.org.
 
     Requires NEWSAPI_KEY environment variable.
@@ -46,20 +47,19 @@ def _newsapi_search(query: str, days_back: int = 7, limit: int = 10) -> Optional
     from_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
     try:
-        resp = _requests.get(
-            "https://newsapi.org/v2/everything",
+        data = http_get_with_retry(
+            f"{NEWSAPI_BASE}/everything",
             params={
                 "q": query,
                 "from": from_date,
                 "sortBy": "relevancy",
                 "pageSize": limit,
-                "language": "en",
+                "language": language,
                 "apiKey": api_key,
             },
             timeout=15,
+            retries=2,
         )
-        resp.raise_for_status()
-        data = resp.json()
     except Exception as e:
         logger.warning("NewsAPI request failed: %s", e)
         return None
@@ -123,7 +123,12 @@ def _yfinance_news(query: str, limit: int = 10) -> Optional[str]:
     return "\n".join(lines)
 
 
-def get_pm_news(query: str, days_back: int = 7, limit: int = 10) -> str:
+def get_pm_news(
+    query: str,
+    days_back: int = 7,
+    limit: int = 10,
+    language: str = "en",
+) -> str:
     """Get news relevant to a prediction market question.
 
     Tries NewsAPI first (best for PM topics), falls back to yfinance.
@@ -132,12 +137,13 @@ def get_pm_news(query: str, days_back: int = 7, limit: int = 10) -> str:
         query: Search query (typically the market question or key terms)
         days_back: How many days back to search
         limit: Maximum number of articles
+        language: Language code for NewsAPI (e.g., "en", "de", "fr")
 
     Returns:
         Formatted string of news results
     """
     # Try NewsAPI first (best for political/general markets)
-    result = _newsapi_search(query, days_back=days_back, limit=limit)
+    result = _newsapi_search(query, days_back=days_back, limit=limit, language=language)
     if result:
         return result
 
@@ -149,36 +155,36 @@ def get_pm_news(query: str, days_back: int = 7, limit: int = 10) -> str:
     return f"No news found for: '{query}'. Consider setting NEWSAPI_KEY in .env for better news coverage."
 
 
-def get_pm_global_news(limit: int = 10) -> str:
+def get_pm_global_news(limit: int = 10, country: str = "us") -> str:
     """Get top global news headlines relevant to prediction markets.
 
     Tries NewsAPI top headlines, falls back to yfinance.
 
     Args:
         limit: Maximum number of articles
+        country: Country code for top headlines (e.g., "us", "gb", "de")
 
     Returns:
         Formatted string of top headlines
     """
     api_key = os.environ.get("NEWSAPI_KEY")
-    if api_key and _HAS_NEWSAPI:
+    if api_key:
         try:
-            resp = _requests.get(
-                "https://newsapi.org/v2/top-headlines",
+            data = http_get_with_retry(
+                f"{NEWSAPI_BASE}/top-headlines",
                 params={
-                    "country": "us",
+                    "country": country,
                     "pageSize": limit,
                     "apiKey": api_key,
                 },
                 timeout=15,
+                retries=2,
             )
-            resp.raise_for_status()
-            data = resp.json()
             articles = data.get("articles", [])
 
             if articles:
                 lines = [
-                    f"Top {limit} Global Headlines (via NewsAPI)",
+                    f"Top {limit} Headlines ({country.upper()}, via NewsAPI)",
                     "",
                 ]
                 for i, article in enumerate(articles[:limit], 1):

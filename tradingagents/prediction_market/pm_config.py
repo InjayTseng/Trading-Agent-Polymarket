@@ -30,4 +30,16 @@ PM_DEFAULT_CONFIG = {
     "max_recur_limit": 100,
     # Tool loop safety limit (per analyst)
     "max_tool_calls": 10,
+    # Signal processing
+    "max_position_size_cap": 0.10,
+    # Cache TTLs (seconds)
+    "cache_ttl_gamma": 300,
+    "cache_ttl_clob_book": 30,
+    "cache_ttl_clob_prices": 300,
+    "cache_ttl_events": 600,
+    "cache_ttl_markets": 300,
+    # WebSocket settings
+    "ws_market_url": "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+    "ws_ping_interval": 10,
+    "ws_max_assets_per_connection": 500,
 }
