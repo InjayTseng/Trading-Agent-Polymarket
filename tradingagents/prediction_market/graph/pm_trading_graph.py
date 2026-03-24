@@ -30,6 +30,10 @@ from tradingagents.prediction_market.agents.utils.pm_agent_utils import (
     search_markets,
     get_news,
     get_global_news,
+    get_crypto_data,
+    get_crypto_history,
+    get_defi_protocol_tvl,
+    get_top_defi,
 )
 
 from .conditional_logic import PMConditionalLogic
@@ -191,6 +195,11 @@ class PMTradingAgentsGraph:
                     get_global_news,
                     get_related_markets,
                     search_markets,
+                    # On-chain / crypto data
+                    get_crypto_data,
+                    get_crypto_history,
+                    get_defi_protocol_tvl,
+                    get_top_defi,
                 ]
             ),
             "sentiment": ToolNode(

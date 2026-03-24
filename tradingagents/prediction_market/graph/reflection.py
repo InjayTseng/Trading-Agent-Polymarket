@@ -48,12 +48,13 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
 
     def _extract_current_situation(self, current_state: Dict[str, Any]) -> str:
         """Extract the current market situation from the state."""
-        curr_event_report = current_state.get("event_report", "")
-        curr_odds_report = current_state.get("odds_report", "")
-        curr_information_report = current_state.get("information_report", "")
-        curr_sentiment_report = current_state.get("sentiment_report", "")
-
-        return f"{curr_event_report}\n\n{curr_odds_report}\n\n{curr_information_report}\n\n{curr_sentiment_report}"
+        reports = [
+            current_state.get("event_report", ""),
+            current_state.get("odds_report", ""),
+            current_state.get("information_report", ""),
+            current_state.get("sentiment_report", ""),
+        ]
+        return "\n\n".join(reports)
 
     def _reflect_on_component(
         self, component_type: str, report: str, situation: str, returns_losses
@@ -70,52 +71,51 @@ Adhere strictly to these instructions, and ensure your output is detailed, accur
         result = self.quick_thinking_llm.invoke(messages).content
         return result
 
+    def _reflect_and_update(
+        self,
+        component_type: str,
+        current_state: Dict[str, Any],
+        state_key: str,
+        returns_losses,
+        memory,
+    ):
+        """Reflect on a component's output and update its memory.
+
+        Args:
+            component_type: Label for the component (e.g., "YES", "TRADER")
+            current_state: Full graph state dict
+            state_key: Dot-path to the report/decision in state
+                       (supports nested keys like "investment_debate_state.yes_history")
+            returns_losses: Actual returns/losses for feedback
+            memory: FinancialSituationMemory instance to update
+        """
+        situation = self._extract_current_situation(current_state)
+
+        # Support nested state access (e.g., "investment_debate_state.yes_history")
+        parts = state_key.split(".")
+        value = current_state
+        for part in parts:
+            value = value.get(part, "")
+
+        result = self._reflect_on_component(component_type, value, situation, returns_losses)
+        memory.add_situations([(situation, result)])
+
     def reflect_yes_researcher(self, current_state, returns_losses, yes_memory):
         """Reflect on YES researcher's analysis and update memory."""
-        situation = self._extract_current_situation(current_state)
-        yes_debate_history = current_state["investment_debate_state"]["yes_history"]
-
-        result = self._reflect_on_component(
-            "YES", yes_debate_history, situation, returns_losses
-        )
-        yes_memory.add_situations([(situation, result)])
+        self._reflect_and_update("YES", current_state, "investment_debate_state.yes_history", returns_losses, yes_memory)
 
     def reflect_no_researcher(self, current_state, returns_losses, no_memory):
         """Reflect on NO researcher's analysis and update memory."""
-        situation = self._extract_current_situation(current_state)
-        no_debate_history = current_state["investment_debate_state"]["no_history"]
-
-        result = self._reflect_on_component(
-            "NO", no_debate_history, situation, returns_losses
-        )
-        no_memory.add_situations([(situation, result)])
+        self._reflect_and_update("NO", current_state, "investment_debate_state.no_history", returns_losses, no_memory)
 
     def reflect_trader(self, current_state, returns_losses, trader_memory):
         """Reflect on trader's decision and update memory."""
-        situation = self._extract_current_situation(current_state)
-        trader_decision = current_state["trader_investment_plan"]
-
-        result = self._reflect_on_component(
-            "TRADER", trader_decision, situation, returns_losses
-        )
-        trader_memory.add_situations([(situation, result)])
+        self._reflect_and_update("TRADER", current_state, "trader_investment_plan", returns_losses, trader_memory)
 
     def reflect_invest_judge(self, current_state, returns_losses, invest_judge_memory):
         """Reflect on investment judge's decision and update memory."""
-        situation = self._extract_current_situation(current_state)
-        judge_decision = current_state["investment_debate_state"]["judge_decision"]
-
-        result = self._reflect_on_component(
-            "INVEST JUDGE", judge_decision, situation, returns_losses
-        )
-        invest_judge_memory.add_situations([(situation, result)])
+        self._reflect_and_update("INVEST JUDGE", current_state, "investment_debate_state.judge_decision", returns_losses, invest_judge_memory)
 
     def reflect_risk_manager(self, current_state, returns_losses, risk_manager_memory):
         """Reflect on risk manager's decision and update memory."""
-        situation = self._extract_current_situation(current_state)
-        judge_decision = current_state["risk_debate_state"]["judge_decision"]
-
-        result = self._reflect_on_component(
-            "RISK JUDGE", judge_decision, situation, returns_losses
-        )
-        risk_manager_memory.add_situations([(situation, result)])
+        self._reflect_and_update("RISK JUDGE", current_state, "risk_debate_state.judge_decision", returns_losses, risk_manager_memory)

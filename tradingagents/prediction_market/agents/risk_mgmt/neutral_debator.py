@@ -1,20 +1,6 @@
-def create_pm_neutral_debator(llm):
-    def neutral_node(state) -> dict:
-        risk_debate_state = state["risk_debate_state"]
-        history = risk_debate_state.get("history", "")
-        neutral_history = risk_debate_state.get("neutral_history", "")
+from .base_debator import create_risk_debator
 
-        current_aggressive_response = risk_debate_state.get("current_aggressive_response", "")
-        current_conservative_response = risk_debate_state.get("current_conservative_response", "")
-
-        event_report = state["event_report"]
-        odds_report = state["odds_report"]
-        information_report = state["information_report"]
-        sentiment_report = state["sentiment_report"]
-
-        trader_decision = state["trader_investment_plan"]
-
-        prompt = f"""As the Neutral Risk Analyst for prediction markets, your role is to provide a balanced perspective, weighing both the potential upside of the trade and the legitimate risks. You prioritize a well-rounded approach, evaluating the trader's probability estimate, the appropriateness of the position sizing, and whether the risk/reward truly justifies the position.
+_PROMPT = """As the Neutral Risk Analyst for prediction markets, your role is to provide a balanced perspective, weighing both the potential upside of the trade and the legitimate risks. You prioritize a well-rounded approach, evaluating the trader's probability estimate, the appropriateness of the position sizing, and whether the risk/reward truly justifies the position.
 
 Key areas to focus on:
 - BALANCED RISK/REWARD ASSESSMENT: Does the identified edge truly compensate for the risks involved? Is the trader's probability estimate reasonable given the available evidence, or could it be biased by selective analysis?
@@ -33,28 +19,17 @@ Event Analysis Report: {event_report}
 Odds Analysis Report: {odds_report}
 Information Analysis Report: {information_report}
 Sentiment Analysis Report: {sentiment_report}
-Here is the current conversation history: {history} Here is the last response from the aggressive analyst: {current_aggressive_response} Here is the last response from the conservative analyst: {current_conservative_response}. If there are no responses from the other viewpoints, do not hallucinate and just present your point.
+Here is the current conversation history: {history} Here are the last arguments from the other analysts: {other_responses}. If there are no responses from the other viewpoints, do not hallucinate and just present your point.
 
 Engage actively by analyzing both sides critically, addressing weaknesses in the aggressive and conservative arguments to advocate for a properly calibrated approach. Challenge each of their points to illustrate why a balanced assessment of edge, sizing, and timing leads to the most reliable outcomes. Focus on debating rather than simply presenting data, aiming to show that careful calibration of both direction and size produces the best risk-adjusted returns. Output conversationally as if you are speaking without any special formatting."""
 
-        response = llm.invoke(prompt)
 
-        argument = f"Neutral Analyst: {response.content}"
-
-        new_risk_debate_state = {
-            "history": history + "\n" + argument,
-            "aggressive_history": risk_debate_state.get("aggressive_history", ""),
-            "conservative_history": risk_debate_state.get("conservative_history", ""),
-            "neutral_history": neutral_history + "\n" + argument,
-            "latest_speaker": "Neutral",
-            "current_aggressive_response": risk_debate_state.get(
-                "current_aggressive_response", ""
-            ),
-            "current_conservative_response": risk_debate_state.get("current_conservative_response", ""),
-            "current_neutral_response": argument,
-            "count": risk_debate_state["count"] + 1,
-        }
-
-        return {"risk_debate_state": new_risk_debate_state}
-
-    return neutral_node
+def create_pm_neutral_debator(llm):
+    return create_risk_debator(
+        llm,
+        role="Neutral Analyst",
+        prompt_template=_PROMPT,
+        own_history_key="neutral_history",
+        own_response_key="current_neutral_response",
+        other_response_keys=["current_aggressive_response", "current_conservative_response"],
+    )
